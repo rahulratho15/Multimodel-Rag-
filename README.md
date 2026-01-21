@@ -1,6 +1,6 @@
 ---
 title: Multimodal RAG System
-emoji: brain
+emoji: 🧠
 colorFrom: indigo
 colorTo: purple
 sdk: gradio

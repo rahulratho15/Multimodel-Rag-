@@ -60,7 +60,6 @@ def process_files(files):
         except Exception as e:
             print(f"Error: {e}")
     
-    # Build indices
     if chunks:
         faiss_index, _ = build_faiss_index(chunks)
         bm25_index = BM25Index(chunks)
@@ -76,13 +75,13 @@ def clear_all():
     bm25_index = None
     source_images = {}
     uploaded_files = []
-    return "Cleared", "None", [], None, ""
+    return "Cleared", "None", None, None, ""
 
 def ask_question(question, history):
     global chunks, faiss_index, bm25_index, source_images
     
     if not question or not question.strip():
-        return history, None, "Enter a question"
+        return history or [], None, "Enter a question"
     
     if not chunks:
         history = history or []
@@ -101,7 +100,6 @@ def ask_question(question, history):
     
     sources = [f"{r.chunk.source} p{r.chunk.page}" for r in results[:3]]
     
-    # Get source image
     img = None
     top = results[0]
     key = f"{top.chunk.source}_page_{top.chunk.page}"
@@ -115,33 +113,31 @@ def ask_question(question, history):
     
     return history, img, " | ".join(sources)
 
-# Build UI
+# Simple UI without complex components
 with gr.Blocks(title="RAG System") as demo:
-    gr.Markdown("# 🧠 Multimodal RAG System\nUpload documents and ask questions")
+    gr.Markdown("# 🧠 Multimodal RAG System")
+    gr.Markdown("Upload PDFs or text files and ask questions")
     
     with gr.Row():
-        with gr.Column(scale=1):
-            files = gr.File(label="Upload Files", file_count="multiple", file_types=[".pdf", ".txt", ".md", ".png", ".jpg", ".jpeg"])
+        with gr.Column():
+            files = gr.File(label="Upload Files", file_count="multiple")
             proc_btn = gr.Button("Process", variant="primary")
             clr_btn = gr.Button("Clear All")
-            status = gr.Textbox(label="Status", interactive=False)
-            loaded = gr.Textbox(label="Loaded Files", interactive=False, value="None")
+            status = gr.Textbox(label="Status")
+            loaded = gr.Textbox(label="Files", value="None")
         
-        with gr.Column(scale=2):
-            chatbot = gr.Chatbot(label="Chat", height=400)
-            question = gr.Textbox(label="Your Question", placeholder="Ask something...")
+        with gr.Column():
+            chatbot = gr.Chatbot(label="Chat", height=350)
+            question = gr.Textbox(label="Question", placeholder="Ask...")
             ask_btn = gr.Button("Ask", variant="primary")
         
-        with gr.Column(scale=1):
-            source_img = gr.Image(label="Source Document")
-            sources_txt = gr.Textbox(label="Sources", interactive=False)
+        with gr.Column():
+            source_img = gr.Image(label="Source")
+            sources_txt = gr.Textbox(label="Sources")
     
-    # Events
     proc_btn.click(process_files, [files], [status, loaded])
     clr_btn.click(clear_all, [], [status, loaded, chatbot, source_img, sources_txt])
-    
-    ask_btn.click(ask_question, [question, chatbot], [chatbot, source_img, sources_txt]).then(lambda: "", None, question)
-    question.submit(ask_question, [question, chatbot], [chatbot, source_img, sources_txt]).then(lambda: "", None, question)
+    ask_btn.click(ask_question, [question, chatbot], [chatbot, source_img, sources_txt])
+    question.submit(ask_question, [question, chatbot], [chatbot, source_img, sources_txt])
 
-if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+demo.launch(server_name="0.0.0.0", server_port=7860)

@@ -1,32 +1,11 @@
-# Core Dependencies for Multimodal RAG Application
-# Optimized for Hugging Face Spaces CPU Basic Tier
-
-# UI Framework
-gradio>=4.0.0
-
-# LLM & Embeddings
+gradio==5.9.1
 huggingface_hub>=0.20.0
 sentence-transformers>=2.2.0
 openai>=1.0.0
-
-# RAG Components
-langchain>=0.1.0
-langchain-community>=0.0.10
 faiss-cpu>=1.7.4
 rank-bm25>=0.2.2
 networkx>=3.0
-
-# Document Processing
 pypdf>=3.0.0
 PyMuPDF>=1.23.0
 Pillow>=10.0.0
-python-docx>=1.0.0
-
-# OCR - Note: pytesseract requires tesseract-ocr installed on system
-pytesseract>=0.3.10
-
-# Utilities
 numpy>=1.24.0
-python-dotenv>=1.0.0
-
-

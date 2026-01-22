@@ -1,143 +1,126 @@
-import os
+import streamlit as st
 from pathlib import Path
-import gradio as gr
+import tempfile
+from utils import extract_pdf, pdf_to_image, build_index, BM25, search, ask_llm, get_context, Chunk
 
-from utils import (
-    extract_pdf_text, pdf_page_to_image, ocr_with_boxes,
-    build_faiss_index, BM25Index, hybrid_search,
-    build_knowledge_graph, query_llm, build_context, DocumentChunk
-)
+st.set_page_config(page_title="Multimodal RAG", page_icon="🧠", layout="wide")
 
-# Global state
-chunks = []
-faiss_index = None
-bm25_index = None
-source_images = {}
-uploaded_files = []
+# Initialize session state
+if "chunks" not in st.session_state:
+    st.session_state.chunks = []
+    st.session_state.index = None
+    st.session_state.bm25 = None
+    st.session_state.images = {}
+    st.session_state.files = []
+    st.session_state.messages = []
 
-def process_files(files):
-    global chunks, faiss_index, bm25_index, source_images, uploaded_files
+st.title("🧠 Multimodal RAG System")
+st.markdown("Upload documents and ask questions")
+
+col1, col2, col3 = st.columns([1, 2, 1])
+
+with col1:
+    st.subheader("📁 Upload")
+    files = st.file_uploader("Upload PDF/TXT files", type=["pdf", "txt", "md"], accept_multiple_files=True)
     
-    if not files:
-        return "No files uploaded", "None"
-    
-    processed = []
-    
-    for f in files:
-        try:
-            name = Path(f).name
-            ext = Path(f).suffix.lower()
+    if st.button("Process Files", type="primary"):
+        if files:
+            st.session_state.chunks = []
+            st.session_state.images = {}
+            st.session_state.files = []
             
-            if ext == '.pdf':
-                new_chunks = extract_pdf_text(f)
-                if new_chunks:
-                    chunks.extend(new_chunks)
-                    for p in range(1, min(10, len(new_chunks) + 1)):
-                        img = pdf_page_to_image(f, p)
+            for f in files:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=Path(f.name).suffix) as tmp:
+                    tmp.write(f.read())
+                    tmp_path = tmp.name
+                
+                if f.name.endswith('.pdf'):
+                    chunks = extract_pdf(tmp_path)
+                    st.session_state.chunks.extend(chunks)
+                    for i in range(1, min(10, len(chunks)+1)):
+                        img = pdf_to_image(tmp_path, i)
                         if img:
-                            source_images[f"{name}_page_{p}"] = img
-                    processed.append(name)
-                    uploaded_files.append(name)
-                    
-            elif ext in ['.txt', '.md']:
-                with open(f, 'r', encoding='utf-8', errors='ignore') as file:
-                    text = file.read()
-                if text.strip():
+                            st.session_state.images[f"{f.name}_page_{i}"] = img
+                else:
+                    text = f.getvalue().decode('utf-8', errors='ignore')
                     words = text.split()
-                    for i in range(0, len(words), 450):
-                        chunk_text = ' '.join(words[i:i+500])
-                        if chunk_text.strip():
-                            chunks.append(DocumentChunk(text=chunk_text, source=name, page=1, chunk_id=len(chunks)))
-                    processed.append(name)
-                    uploaded_files.append(name)
-                    
-            elif ext in ['.png', '.jpg', '.jpeg', '.webp']:
-                ocr = ocr_with_boxes(f)
-                if ocr.image:
-                    source_images[name] = ocr.image
-                    processed.append(name)
-                    uploaded_files.append(name)
-        except Exception as e:
-            print(f"Error: {e}")
+                    for i in range(0, len(words), 400):
+                        t = ' '.join(words[i:i+450])
+                        if t.strip():
+                            st.session_state.chunks.append(Chunk(text=t, source=f.name, page=1))
+                
+                st.session_state.files.append(f.name)
+            
+            if st.session_state.chunks:
+                st.session_state.index, st.session_state.chunks = build_index(st.session_state.chunks)
+                st.session_state.bm25 = BM25(st.session_state.chunks)
+            
+            st.success(f"Loaded {len(st.session_state.files)} files, {len(st.session_state.chunks)} chunks")
     
-    if chunks:
-        faiss_index, _ = build_faiss_index(chunks)
-        bm25_index = BM25Index(chunks)
+    if st.button("Clear All"):
+        st.session_state.chunks = []
+        st.session_state.index = None
+        st.session_state.bm25 = None
+        st.session_state.images = {}
+        st.session_state.files = []
+        st.session_state.messages = []
+        st.rerun()
     
-    status = f"Loaded: {', '.join(processed)}" if processed else "No files processed"
-    files_str = ", ".join(uploaded_files) if uploaded_files else "None"
-    return status, files_str
+    st.subheader("📄 Loaded Files")
+    if st.session_state.files:
+        for f in st.session_state.files:
+            st.text(f"• {f}")
+    else:
+        st.text("No files loaded")
 
-def clear_all():
-    global chunks, faiss_index, bm25_index, source_images, uploaded_files
-    chunks = []
-    faiss_index = None
-    bm25_index = None
-    source_images = {}
-    uploaded_files = []
-    return "Cleared", "None", None, None, ""
-
-def ask_question(question, history):
-    global chunks, faiss_index, bm25_index, source_images
+with col2:
+    st.subheader("💬 Chat")
     
-    if not question or not question.strip():
-        return history or [], None, "Enter a question"
+    # Display chat history
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
     
-    if not chunks:
-        history = history or []
-        history.append((question, "Please upload documents first."))
-        return history, None, "No documents"
-    
-    results = hybrid_search(question, faiss_index, chunks, bm25_index, top_k=5)
-    
-    if not results:
-        history = history or []
-        history.append((question, "No relevant information found."))
-        return history, None, "No results"
-    
-    context = build_context(results)
-    answer = query_llm(question, context)
-    
-    sources = [f"{r.chunk.source} p{r.chunk.page}" for r in results[:3]]
-    
-    img = None
-    top = results[0]
-    key = f"{top.chunk.source}_page_{top.chunk.page}"
-    if key in source_images:
-        img = source_images[key]
-    elif top.chunk.source in source_images:
-        img = source_images[top.chunk.source]
-    
-    history = history or []
-    history.append((question, answer))
-    
-    return history, img, " | ".join(sources)
-
-# Simple UI without complex components
-with gr.Blocks(title="RAG System") as demo:
-    gr.Markdown("# 🧠 Multimodal RAG System")
-    gr.Markdown("Upload PDFs or text files and ask questions")
-    
-    with gr.Row():
-        with gr.Column():
-            files = gr.File(label="Upload Files", file_count="multiple")
-            proc_btn = gr.Button("Process", variant="primary")
-            clr_btn = gr.Button("Clear All")
-            status = gr.Textbox(label="Status")
-            loaded = gr.Textbox(label="Files", value="None")
+    # Chat input
+    if prompt := st.chat_input("Ask a question..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
         
-        with gr.Column():
-            chatbot = gr.Chatbot(label="Chat", height=350)
-            question = gr.Textbox(label="Question", placeholder="Ask...")
-            ask_btn = gr.Button("Ask", variant="primary")
+        with st.chat_message("user"):
+            st.write(prompt)
         
-        with gr.Column():
-            source_img = gr.Image(label="Source")
-            sources_txt = gr.Textbox(label="Sources")
-    
-    proc_btn.click(process_files, [files], [status, loaded])
-    clr_btn.click(clear_all, [], [status, loaded, chatbot, source_img, sources_txt])
-    ask_btn.click(ask_question, [question, chatbot], [chatbot, source_img, sources_txt])
-    question.submit(ask_question, [question, chatbot], [chatbot, source_img, sources_txt])
+        if not st.session_state.chunks:
+            response = "Please upload documents first."
+            st.session_state.current_image = None
+            st.session_state.current_sources = ""
+        else:
+            results = search(prompt, st.session_state.index, st.session_state.chunks, st.session_state.bm25)
+            if results:
+                context = get_context(results)
+                response = ask_llm(prompt, context)
+                st.session_state.current_sources = " | ".join([f"{r.chunk.source} p{r.chunk.page}" for r in results[:3]])
+                
+                # Get source image
+                top = results[0]
+                key = f"{top.chunk.source}_page_{top.chunk.page}"
+                st.session_state.current_image = st.session_state.images.get(key)
+            else:
+                response = "No relevant information found."
+                st.session_state.current_image = None
+                st.session_state.current_sources = ""
+        
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        
+        with st.chat_message("assistant"):
+            st.write(response)
 
-demo.launch(server_name="0.0.0.0", server_port=7860)
+with col3:
+    st.subheader("📷 Source")
+    
+    if hasattr(st.session_state, 'current_image') and st.session_state.current_image:
+        st.image(st.session_state.current_image, caption="Source Document")
+    else:
+        st.info("Source will appear here")
+    
+    st.subheader("📚 Sources")
+    if hasattr(st.session_state, 'current_sources') and st.session_state.current_sources:
+        st.text(st.session_state.current_sources)

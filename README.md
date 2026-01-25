@@ -9,3 +9,5 @@ app_file: app.py
 pinned: false
 license: mit
 ---
+
+Live Demo: https://huggingface.co/spaces/RathnavelRahul/omni

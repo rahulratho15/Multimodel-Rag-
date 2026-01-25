@@ -3,15 +3,13 @@ Live Demo: https://huggingface.co/spaces/RathnavelRahul/omni
 
 # Omni RAG: Multimodal Retrieval System
 
-![Omni RAG Banner](https://via.placeholder.com/1000x300?text=Omni+RAG:+Hybrid+Search+&+Multimodal+Context)
+
 
 > **A state-of-the-art RAG architecture combining Hybrid Search (Dense + Sparse), Multimodal Context Retrieval, and Llama-3 reasoning.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40.0-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![Hugging Face](https://img.shields.io/badge/LLM-Llama--3-yellow?logo=huggingface&logoColor=white)](https://huggingface.co/)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Active-success)]()
 
 ---
 
@@ -204,6 +202,3 @@ The application requires a Hugging Face Token to access the Llama-3 model.
 
 
 
----
-
-*Built with ❤️ by [rahulratho15](https://github.com/rahulratho15)*
